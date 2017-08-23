@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -542,70 +541,13 @@ var (
 	dtype       = defineFlags.String("type", "", "The task type (stream|batch)")
 	dtemplate   = defineFlags.String("template", "", "Optional template ID")
 	dvars       = defineFlags.String("vars", "", "Optional path to a JSON vars file")
+	dfile       = defineFlags.String("file", "", "Optional path to a YAML or JSON template task file")
 	dnoReload   = defineFlags.Bool("no-reload", false, "Do not reload the task even if it is enabled")
-	ddbrp       = make(dbrps, 0)
+	ddbrp       = make(client.DBRPs, 0)
 )
 
 func init() {
 	defineFlags.Var(&ddbrp, "dbrp", `A database and retention policy pair of the form "db"."rp" the quotes are optional. The flag can be specified multiple times.`)
-}
-
-type dbrps []client.DBRP
-
-func (d *dbrps) String() string {
-	return fmt.Sprint(*d)
-}
-
-// Parse string of the form "db"."rp" where the quotes are optional but can include escaped quotes
-// within the strings.
-func (d *dbrps) Set(value string) error {
-	dbrp := client.DBRP{}
-	if len(value) == 0 {
-		return errors.New("dbrp cannot be empty")
-	}
-	var n int
-	if value[0] == '"' {
-		dbrp.Database, n = parseQuotedStr(value)
-	} else {
-		n = strings.IndexRune(value, '.')
-		if n == -1 {
-			return errors.New("does not contain a '.', it must be in the form \"dbname\".\"rpname\" where the quotes are optional.")
-		}
-		dbrp.Database = value[:n]
-	}
-	if value[n] != '.' {
-		return errors.New("dbrp must specify retention policy, do you have a missing or extra '.'?")
-	}
-	value = value[n+1:]
-	if value[0] == '"' {
-		dbrp.RetentionPolicy, _ = parseQuotedStr(value)
-	} else {
-		dbrp.RetentionPolicy = value
-	}
-	*d = append(*d, dbrp)
-	return nil
-}
-
-// parseQuotedStr reads from txt starting with beginning quote until next unescaped quote returning the unescaped string and the number of bytes read.
-func parseQuotedStr(txt string) (string, int) {
-	quote := txt[0]
-	// Unescape quotes
-	var buf bytes.Buffer
-	buf.Grow(len(txt))
-	last := 1
-	i := 1
-	for ; i < len(txt)-1; i++ {
-		if txt[i] == '\\' && txt[i+1] == quote {
-			buf.Write([]byte(txt[last:i]))
-			buf.Write([]byte{quote})
-			i += 2
-			last = i
-		} else if txt[i] == quote {
-			break
-		}
-	}
-	buf.Write([]byte(txt[last:i]))
-	return buf.String(), i + 1
 }
 
 func defineUsage() {
@@ -687,33 +629,89 @@ func doDefine(args []string) error {
 		}
 	}
 
+	fileVars := client.TaskVars{}
+	if *dfile != "" {
+		f, err := os.Open(*dfile)
+		if err != nil {
+			return errors.Wrapf(err, "failed to open file %s", *dfile)
+		}
+		data, err := ioutil.ReadAll(f)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read task vars file %q", *dfile)
+		}
+		defer f.Close()
+		switch ext := path.Ext(*dfile); ext {
+		case ".yaml", ".yml":
+			if err := yaml.Unmarshal(data, &fileVars); err != nil {
+				return errors.Wrapf(err, "failed to unmarshal yaml task vars file %q", *dfile)
+			}
+		case ".json":
+			if err := json.Unmarshal(data, &fileVars); err != nil {
+				return errors.Wrapf(err, "failed to unmarshal json task vars file %q", *dfile)
+			}
+		default:
+			return errors.New("bad file extension. Must be YAML or JSON")
+
+		}
+	}
+
 	l := cli.TaskLink(id)
 	task, _ := cli.Task(l, nil)
 	var err error
 	if task.ID == "" {
-		_, err = cli.CreateTask(client.CreateTaskOptions{
-			ID:         id,
-			TemplateID: *dtemplate,
-			Type:       ttype,
-			DBRPs:      ddbrp,
-			TICKscript: script,
-			Vars:       vars,
-			Status:     client.Disabled,
-		})
-	} else {
-		_, err = cli.UpdateTask(
-			l,
-			client.UpdateTaskOptions{
+		if *dfile != "" {
+			o, err := fileVars.CreateTaskOptions()
+			if err != nil {
+				return err
+			}
+			_, err = cli.CreateTask(o)
+			if err != nil {
+				return err
+			}
+		} else {
+			o := client.CreateTaskOptions{
+				ID:         id,
 				TemplateID: *dtemplate,
 				Type:       ttype,
 				DBRPs:      ddbrp,
 				TICKscript: script,
 				Vars:       vars,
-			},
-		)
-	}
-	if err != nil {
-		return err
+				Status:     client.Disabled,
+			}
+			_, err = cli.CreateTask(o)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		if *dfile != "" {
+			o, err := fileVars.UpdateTaskOptions()
+			if err != nil {
+				return err
+			}
+			_, err = cli.UpdateTask(
+				l,
+				o,
+			)
+			if err != nil {
+				return err
+			}
+		} else {
+			o := client.UpdateTaskOptions{
+				TemplateID: *dtemplate,
+				Type:       ttype,
+				DBRPs:      ddbrp,
+				TICKscript: script,
+				Vars:       vars,
+			}
+			_, err = cli.UpdateTask(
+				l,
+				o,
+			)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	if !*dnoReload && task.Status == client.Enabled {
@@ -822,7 +820,7 @@ func doDefineTemplate(args []string) error {
 }
 
 func defineTopicHandlerUsage() {
-	var u = `Usage: kapacitor define-topic-handler <topic id> <handler id> <path to handler spec file>
+	var u = `Usage: kapacitor define-topic-handler <path to handler spec file>
 
 	Create or update a handler.
 
@@ -832,7 +830,7 @@ For example:
 
 	Define a handler using the slack.yaml file:
 
-		$ kapacitor define-handler system my_handler slack.yaml
+		$ kapacitor define-topic-handler slack.yaml
 
 Options:
 `
@@ -840,14 +838,12 @@ Options:
 }
 
 func doDefineTopicHandler(args []string) error {
-	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, "Must provide a topic ID, a handler ID and a path to a handler file.")
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "Must provide a path to a handler file.")
 		defineTopicHandlerUsage()
 		os.Exit(2)
 	}
-	topic := args[0]
-	handlerID := args[1]
-	p := args[2]
+	p := args[0]
 	f, err := os.Open(p)
 	if err != nil {
 		return errors.Wrapf(err, "failed to open handler spec file %q", p)
@@ -870,12 +866,11 @@ func doDefineTopicHandler(args []string) error {
 			return errors.Wrapf(err, "failed to unmarshal json handler file %q", p)
 		}
 	}
-	ho.ID = handlerID
 
-	l := cli.TopicHandlerLink(topic, ho.ID)
+	l := cli.TopicHandlerLink(ho.Topic, ho.ID)
 	handler, _ := cli.TopicHandler(l)
 	if handler.ID == "" {
-		_, err = cli.CreateTopicHandler(cli.TopicHandlersLink(topic), ho)
+		_, err = cli.CreateTopicHandler(cli.TopicHandlersLink(ho.Topic), ho)
 	} else {
 		_, err = cli.ReplaceTopicHandler(l, ho)
 	}

@@ -4,6 +4,7 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -37,6 +38,7 @@ import (
 	"github.com/influxdata/kapacitor/services/httppost"
 	"github.com/influxdata/kapacitor/services/influxdb"
 	"github.com/influxdata/kapacitor/services/k8s"
+	"github.com/influxdata/kapacitor/services/load"
 	"github.com/influxdata/kapacitor/services/marathon"
 	"github.com/influxdata/kapacitor/services/mqtt"
 	"github.com/influxdata/kapacitor/services/nerve"
@@ -104,6 +106,7 @@ type Server struct {
 	TaskMaster       *kapacitor.TaskMaster
 	TaskMasterLookup *kapacitor.TaskMasterLookup
 
+	LoadService           *load.Service
 	AuthService           auth.Interface
 	HTTPDService          *httpd.Service
 	StorageService        *storage.Service
@@ -210,6 +213,10 @@ func New(c *Config, buildInfo BuildInfo, diagService *diagnostic.Service) (*Serv
 
 	if err := s.appendInfluxDBService(); err != nil {
 		return nil, errors.Wrap(err, "influxdb service")
+	}
+
+	if err := s.appendLoadService(); err != nil {
+		return nil, errors.Wrap(err, "load service")
 	}
 
 	// Append Alert integration services
@@ -360,6 +367,26 @@ func (s *Server) appendSMTPService() {
 
 	s.SetDynamicService("smtp", srv)
 	s.AppendService("smtp", srv)
+}
+
+func (s *Server) appendLoadService() error {
+	c := s.config.Load
+	l := s.LogService.NewLogger("[load] ", log.LstdFlags)
+	if s.HTTPDService == nil {
+		return errors.New("httpd service must be set for load service")
+	}
+	if s.HTTPDService.Handler == nil {
+		return errors.New("httpd service handler must be set for load service")
+	}
+	srv, err := load.NewService(c, s.HTTPDService.Handler, l)
+	if err != nil {
+		return err
+	}
+
+	s.LoadService = srv
+	s.AppendService("load", srv)
+
+	return nil
 }
 
 func (s *Server) appendInfluxDBService() error {

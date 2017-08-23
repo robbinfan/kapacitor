@@ -346,6 +346,204 @@ func TestServer_CreateTask(t *testing.T) {
 	}
 }
 
+func TestServer_CreateTaskImplicit(t *testing.T) {
+	s, cli := OpenDefaultServer()
+	defer s.Close()
+
+	id := "testTaskID"
+	dbrps := []client.DBRP{
+		{
+			Database:        "mydb",
+			RetentionPolicy: "myrp",
+		},
+		{
+			Database:        "otherdb",
+			RetentionPolicy: "default",
+		},
+	}
+	tick := `dbrp "mydb"."myrp"
+
+dbrp "otherdb"."default"
+
+stream
+    |from()
+        .measurement('test')
+`
+	task, err := cli.CreateTask(client.CreateTaskOptions{
+		ID:         id,
+		TICKscript: tick,
+		Status:     client.Disabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ti, err := cli.Task(task.Link, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ti.Error != "" {
+		t.Fatal(ti.Error)
+	}
+	if ti.ID != id {
+		t.Fatalf("unexpected id got %s exp %s", ti.ID, id)
+	}
+	if ti.Type != client.StreamTask {
+		t.Fatalf("unexpected type got %v exp %v", ti.Type, client.StreamTask)
+	}
+	if ti.Status != client.Disabled {
+		t.Fatalf("unexpected status got %v exp %v", ti.Status, client.Disabled)
+	}
+	if !reflect.DeepEqual(ti.DBRPs, dbrps) {
+		t.Fatalf("unexpected dbrps got %s exp %s", ti.DBRPs, dbrps)
+	}
+	if ti.TICKscript != tick {
+		t.Fatalf("unexpected TICKscript got %s exp %s", ti.TICKscript, tick)
+	}
+	dot := "digraph testTaskID {\nstream0 -> from1;\n}"
+	if ti.Dot != dot {
+		t.Fatalf("unexpected dot\ngot\n%s\nexp\n%s\n", ti.Dot, dot)
+	}
+}
+
+func TestServer_CreateTaskImplicitAndExplicit(t *testing.T) {
+	s, cli := OpenDefaultServer()
+	defer s.Close()
+
+	id := "testTaskID"
+	dbrps := []client.DBRP{
+		{
+			Database:        "mydb",
+			RetentionPolicy: "myrp",
+		},
+	}
+	tick := `dbrp "mydb"."myrp"
+
+dbrp "otherdb"."default"
+
+stream
+    |from()
+        .measurement('test')
+`
+	_, err := cli.CreateTask(client.CreateTaskOptions{
+		ID:         id,
+		DBRPs:      dbrps,
+		TICKscript: tick,
+		Status:     client.Disabled,
+	})
+
+	// It is expected that error should be non nil
+	if err == nil {
+		t.Fatal("expected task to fail to be created")
+	}
+}
+
+func TestServer_CreateTaskExplicitUpdateImplicit(t *testing.T) {
+	s, cli := OpenDefaultServer()
+	defer s.Close()
+
+	id := "testTaskID"
+	createDBRPs := []client.DBRP{
+		{
+			Database:        "mydb",
+			RetentionPolicy: "myrp",
+		},
+		{
+			Database:        "otherdb",
+			RetentionPolicy: "default",
+		},
+	}
+	createTick := `stream
+    |from()
+        .measurement('test')
+`
+	updateDBRPs := []client.DBRP{
+		{
+			Database:        "mydb",
+			RetentionPolicy: "myrp",
+		},
+	}
+	updateTick := `dbrp "mydb"."myrp"
+
+stream
+    |from()
+        .measurement('test')
+`
+	task, err := cli.CreateTask(client.CreateTaskOptions{
+		ID:         id,
+		DBRPs:      createDBRPs,
+		TICKscript: createTick,
+		Status:     client.Disabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ti, err := cli.Task(task.Link, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ti.Error != "" {
+		t.Fatal(ti.Error)
+	}
+	if ti.ID != id {
+		t.Fatalf("unexpected id got %s exp %s", ti.ID, id)
+	}
+	if ti.Type != client.StreamTask {
+		t.Fatalf("unexpected type got %v exp %v", ti.Type, client.StreamTask)
+	}
+	if ti.Status != client.Disabled {
+		t.Fatalf("unexpected status got %v exp %v", ti.Status, client.Disabled)
+	}
+	if !reflect.DeepEqual(ti.DBRPs, createDBRPs) {
+		t.Fatalf("unexpected dbrps got %s exp %s", ti.DBRPs, createDBRPs)
+	}
+	if ti.TICKscript != createTick {
+		t.Fatalf("unexpected TICKscript got %s exp %s", ti.TICKscript, createTick)
+	}
+	dot := "digraph testTaskID {\nstream0 -> from1;\n}"
+	if ti.Dot != dot {
+		t.Fatalf("unexpected dot\ngot\n%s\nexp\n%s\n", ti.Dot, dot)
+	}
+
+	_, err = cli.UpdateTask(task.Link, client.UpdateTaskOptions{
+		TICKscript: updateTick,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ti, err = cli.Task(task.Link, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ti.Error != "" {
+		t.Fatal(ti.Error)
+	}
+	if ti.ID != id {
+		t.Fatalf("unexpected id got %s exp %s", ti.ID, id)
+	}
+	if ti.Type != client.StreamTask {
+		t.Fatalf("unexpected type got %v exp %v", ti.Type, client.StreamTask)
+	}
+	if ti.Status != client.Disabled {
+		t.Fatalf("unexpected status got %v exp %v", ti.Status, client.Disabled)
+	}
+	if !reflect.DeepEqual(ti.DBRPs, updateDBRPs) {
+		t.Fatalf("unexpected dbrps got %s exp %s", ti.DBRPs, updateDBRPs)
+	}
+	if ti.TICKscript != updateTick {
+		t.Fatalf("unexpected TICKscript got %s exp %s", ti.TICKscript, updateTick)
+	}
+	dot = "digraph testTaskID {\nstream0 -> from1;\n}"
+	if ti.Dot != dot {
+		t.Fatalf("unexpected dot\ngot\n%s\nexp\n%s\n", ti.Dot, dot)
+	}
+}
+
 func TestServer_EnableTask(t *testing.T) {
 	s, cli := OpenDefaultServer()
 	defer s.Close()
@@ -1013,6 +1211,139 @@ stream
 	}
 	if !reflect.DeepEqual(vars, ti.Vars) {
 		t.Fatalf("unexpected vars\ngot\n%s\nexp\n%s\n", ti.Vars, vars)
+	}
+}
+
+func TestServer_CreateTemplateImplicitAndUpdateExplicitWithTasks(t *testing.T) {
+	s, cli := OpenDefaultServer()
+	defer s.Close()
+
+	id := "testTemplateID"
+	implicitTick := `dbrp "telegraf"."autogen"
+
+var x = 5
+
+stream
+    |from()
+        .measurement('test')
+`
+	template, err := cli.CreateTemplate(client.CreateTemplateOptions{
+		ID:         id,
+		TICKscript: implicitTick,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ti, err := cli.Template(template.Link, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ti.Error != "" {
+		t.Fatal(ti.Error)
+	}
+	if ti.ID != id {
+		t.Fatalf("unexpected id got %s exp %s", ti.ID, id)
+	}
+	if ti.Type != client.StreamTask {
+		t.Fatalf("unexpected type got %v exp %v", ti.Type, client.StreamTask)
+	}
+	if ti.TICKscript != implicitTick {
+		t.Fatalf("unexpected TICKscript got\n%s\nexp\n%s\n", ti.TICKscript, implicitTick)
+	}
+	dot := "digraph testTemplateID {\nstream0 -> from1;\n}"
+	if ti.Dot != dot {
+		t.Fatalf("unexpected dot\ngot\n%s\nexp\n%s\n", ti.Dot, dot)
+	}
+	vars := client.Vars{"x": {Value: int64(5), Type: client.VarInt}}
+	if !reflect.DeepEqual(vars, ti.Vars) {
+		t.Fatalf("unexpected vars\ngot\n%s\nexp\n%s\n", ti.Vars, vars)
+	}
+
+	implicitDBRPs := []client.DBRP{
+		{
+			Database:        "telegraf",
+			RetentionPolicy: "autogen",
+		},
+	}
+
+	count := 1
+	tasks := make([]client.Task, count)
+	for i := 0; i < count; i++ {
+		task, err := cli.CreateTask(client.CreateTaskOptions{
+			TemplateID: template.ID,
+			Status:     client.Enabled,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tasks[i] = task
+
+		ti, err := cli.Task(task.Link, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !reflect.DeepEqual(ti.DBRPs, implicitDBRPs) {
+			t.Fatalf("unexpected dbrps got %s exp %s", ti.DBRPs, implicitDBRPs)
+		}
+	}
+
+	updateTick := `var x = 5
+	
+	stream
+	    |from()
+	        .measurement('test')
+	`
+
+	_, err = cli.UpdateTemplate(template.Link, client.UpdateTemplateOptions{
+		ID:         id,
+		TICKscript: updateTick,
+	})
+	// Expects error
+	if err == nil {
+		t.Fatal(err)
+	}
+
+	finalTick := `dbrp "telegraf"."autogen"
+
+	dbrp "telegraf"."not_autogen"
+
+	var x = 5
+	
+	stream
+	    |from()
+	        .measurement('test')
+	`
+
+	finalDBRPs := []client.DBRP{
+		{
+			Database:        "telegraf",
+			RetentionPolicy: "autogen",
+		},
+		{
+			Database:        "telegraf",
+			RetentionPolicy: "not_autogen",
+		},
+	}
+	template, err = cli.UpdateTemplate(template.Link, client.UpdateTemplateOptions{
+		ID:         id,
+		TICKscript: finalTick,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, task := range tasks {
+		ti, err := cli.Task(task.Link, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if !reflect.DeepEqual(ti.DBRPs, finalDBRPs) {
+			t.Fatalf("unexpected dbrps got %s exp %s", ti.DBRPs, finalDBRPs)
+		}
 	}
 }
 func TestServer_UpdateTemplateID_WithTasks(t *testing.T) {

@@ -128,6 +128,11 @@ func (cmd *Command) Run(args ...string) error {
 	if err := s.Open(); err != nil {
 		return fmt.Errorf("open server: %s", err)
 	}
+
+	if err := s.LoadService.Load(); err != nil {
+		return fmt.Errorf("loading tasks/templates/handlers: %s", err)
+	}
+
 	cmd.Server = s
 
 	// Begin monitoring the server's error channel.
