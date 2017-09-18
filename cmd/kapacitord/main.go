@@ -91,38 +91,35 @@ func (m *Main) Run(args ...string) error {
 		signal.Notify(signalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		m.Diag.Info("listening for signals")
 
-		for {
-			select {
+	Loop:
+		for s := range signalCh {
+			switch s.String() {
+			case syscall.SIGTERM.String():
+				m.Diag.Info("SIGTERM received, initializing clean shutdown...")
+				go func() {
+					cmd.Close()
+				}()
+				break Loop
 
-			case s := <-signalCh:
-				switch s.String() {
-				case syscall.SIGTERM.String():
-					m.Diag.Info("SIGTERM received, initializing clean shutdown...")
-					go func() {
-						cmd.Close()
-					}()
-					break Loop
-
-				case syscall.SIGHUP.String():
-					m.Diag.Info("SIGHUP received, reloading tasks/templates/handlers directory...")
-					if err := cmd.Server.LoadService.Load(); err != nil {
-						m.Diag.Error("failed to reload tasks/templates/handlers", err)
-						if _, ok := err.(load.HardError); ok {
-							go func() {
-								cmd.Close()
-							}()
-							break Loop
-						}
+			case syscall.SIGHUP.String():
+				m.Diag.Info("SIGHUP received, reloading tasks/templates/handlers directory...")
+				if err := cmd.Server.LoadService.Load(); err != nil {
+					m.Diag.Error("failed to reload tasks/templates/handlers", err)
+					if _, ok := err.(load.HardError); ok {
+						go func() {
+							cmd.Close()
+						}()
+						break Loop
 					}
-
-					// This should never happen
-				default:
-					m.Diag.Info("signal received, initializing clean shutdown...")
-					go func() {
-						cmd.Close()
-					}()
-					break Loop
 				}
+
+			default:
+				m.Logger.Println("I! Signal received, initializing clean shutdown...")
+				m.Diag.Info("signal received, initializing clean shutdown...")
+				go func() {
+					cmd.Close()
+				}()
+				break Loop
 			}
 		}
 

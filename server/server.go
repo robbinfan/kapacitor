@@ -888,6 +888,10 @@ func (s *Server) Open() error {
 		return err
 	}
 
+	if err := s.LoadService.Load(); err != nil {
+		return fmt.Errorf("loading tasks/templates/handlers: %s", err)
+	}
+
 	go s.watchServices()
 	go s.watchConfigUpdates()
 
