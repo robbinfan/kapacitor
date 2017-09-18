@@ -13,7 +13,6 @@ import (
 
 	"github.com/influxdata/kapacitor/cmd/kapacitord/help"
 	"github.com/influxdata/kapacitor/cmd/kapacitord/run"
-	"github.com/influxdata/kapacitor/services/load"
 )
 
 type Diagnostic run.Diagnostic
@@ -103,14 +102,11 @@ func (m *Main) Run(args ...string) error {
 
 			case syscall.SIGHUP.String():
 				m.Diag.Info("SIGHUP received, reloading tasks/templates/handlers directory...")
-				if err := cmd.Server.LoadService.Load(); err != nil {
-					m.Diag.Error("failed to reload tasks/templates/handlers", err)
-					if _, ok := err.(load.HardError); ok {
-						go func() {
-							cmd.Close()
-						}()
-						break Loop
-					}
+				if err := cmd.Server.Reload(); err != nil {
+					go func() {
+						cmd.Close()
+					}()
+					break Loop
 				}
 
 			default:

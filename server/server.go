@@ -1049,6 +1049,17 @@ func (s *Server) writeID(file string, id uuid.UUID) error {
 	return nil
 }
 
+func (s *Server) Reload() error {
+	if err := s.LoadService.Load(); err != nil {
+		s.Diag.Error("failed to reload tasks/templates/handlers", err)
+		if _, ok := err.(load.HardError); ok {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *Server) SetClusterID(clusterID uuid.UUID) error {
 	s.clusterIDMu.Lock()
 	defer s.clusterIDMu.Unlock()
