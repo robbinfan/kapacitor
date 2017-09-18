@@ -114,7 +114,6 @@ func (m *Main) Run(args ...string) error {
 				}
 
 			default:
-				m.Logger.Println("I! Signal received, initializing clean shutdown...")
 				m.Diag.Info("signal received, initializing clean shutdown...")
 				go func() {
 					cmd.Close()

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -20,6 +19,11 @@ import (
 
 var defaultURL = "http://localhost:9092"
 
+type Diagnostic interface {
+	Debug(msg string)
+	Loading(thing string, file string)
+}
+
 type HardError struct {
 	err error
 }
@@ -32,11 +36,11 @@ type Service struct {
 	mu     sync.Mutex
 	config Config
 
-	cli    *client.Client
-	logger *log.Logger
+	cli  *client.Client
+	diag Diagnostic
 }
 
-func NewService(c Config, h http.Handler, l *log.Logger) (*Service, error) {
+func NewService(c Config, h http.Handler, d Diagnostic) (*Service, error) {
 	cfg := client.Config{
 		URL: defaultURL,
 	}
@@ -51,7 +55,7 @@ func NewService(c Config, h http.Handler, l *log.Logger) (*Service, error) {
 
 	return &Service{
 		config: c,
-		logger: l,
+		diag:   d,
 		cli:    cli,
 	}, nil
 }
@@ -170,19 +174,19 @@ func (s *Service) load() error {
 	if !s.config.Enabled {
 		return nil
 	}
-	s.logger.Println("D! Loading tasks")
+	s.diag.Debug("loading tasks")
 	err := s.loadTasks()
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	s.logger.Println("D! Loading templates")
+	s.diag.Debug("loading templates")
 	err = s.loadTemplates()
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
-	s.logger.Println("D! Loading handlers")
+	s.diag.Debug("loading handlers")
 	err = s.loadHandlers()
 	if err != nil && !os.IsNotExist(err) {
 		return err
@@ -198,7 +202,7 @@ func (s *Service) loadTasks() error {
 	}
 
 	for _, f := range files {
-		s.logger.Println("D! Loading task from file: ", f)
+		s.diag.Loading("task", f)
 		if err := s.loadTask(f); err != nil {
 			return fmt.Errorf("failed to load file %s: %s", f, err.Error())
 		}
@@ -265,14 +269,14 @@ func (s *Service) loadTemplates() error {
 	}
 
 	for _, f := range files {
-		s.logger.Println("D! Loading template from file: ", f)
+		s.diag.Loading("template", f)
 		if err := s.loadTemplate(f); err != nil {
 			return fmt.Errorf("failed to load file %s: %s", f, err.Error())
 		}
 	}
 
 	for _, v := range vars {
-		s.logger.Println("D! Loading task vars from file: ", v)
+		s.diag.Loading("task-vars", v)
 		if err := s.loadVars(v); err != nil {
 			return fmt.Errorf("failed to load file %s: %s", v, err.Error())
 		}
@@ -393,7 +397,7 @@ func (s *Service) loadHandlers() error {
 	}
 
 	for _, f := range files {
-		s.logger.Println("D! Loading handler from file: ", f)
+		s.diag.Loading("handler", f)
 		if err := s.loadHandler(f); err != nil {
 			return fmt.Errorf("failed to load file %s: %s", f, err.Error())
 		}

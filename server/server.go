@@ -4,7 +4,6 @@ package server
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -371,14 +370,14 @@ func (s *Server) appendSMTPService() {
 
 func (s *Server) appendLoadService() error {
 	c := s.config.Load
-	l := s.LogService.NewLogger("[load] ", log.LstdFlags)
+	d := s.DiagService.NewLoadHandler()
 	if s.HTTPDService == nil {
 		return errors.New("httpd service must be set for load service")
 	}
 	if s.HTTPDService.Handler == nil {
 		return errors.New("httpd service handler must be set for load service")
 	}
-	srv, err := load.NewService(c, s.HTTPDService.Handler, l)
+	srv, err := load.NewService(c, s.HTTPDService.Handler, d)
 	if err != nil {
 		return err
 	}
