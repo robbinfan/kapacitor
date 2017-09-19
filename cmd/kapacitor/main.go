@@ -543,8 +543,25 @@ var (
 	dvars       = defineFlags.String("vars", "", "Optional path to a JSON vars file")
 	dfile       = defineFlags.String("file", "", "Optional path to a YAML or JSON template task file")
 	dnoReload   = defineFlags.Bool("no-reload", false, "Do not reload the task even if it is enabled")
-	ddbrp       = make(client.DBRPs, 0)
+	ddbrp       = make(dbrps, 0)
 )
+
+type dbrps []client.DBRP
+
+func (d *dbrps) String() string {
+	return fmt.Sprint(*d)
+}
+
+// Parse string of the form "db"."rp" where the quotes are optional but can include escaped quotes
+// within the strings.
+func (d *dbrps) Set(value string) error {
+	dbrp := &client.DBRP{}
+	if err := dbrp.Unmarshal(value); err != nil {
+		return err
+	}
+	*d = append(*d, *dbrp)
+	return nil
+}
 
 func init() {
 	defineFlags.Var(&ddbrp, "dbrp", `A database and retention policy pair of the form "db"."rp" the quotes are optional. The flag can be specified multiple times.`)

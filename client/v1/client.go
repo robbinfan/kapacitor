@@ -222,6 +222,42 @@ func (d DBRP) String() string {
 	return fmt.Sprintf("%q.%q", d.Database, d.RetentionPolicy)
 }
 
+func (d *DBRP) Unmarshal(value string) error {
+	if len(value) == 0 {
+		return errors.New("dbrp cannot be empty")
+	}
+	var n int
+	if value[0] == '"' {
+		d.Database, n = parseQuotedStr(value)
+	} else {
+		n = strings.IndexRune(value, '.')
+		if n == -1 {
+			return errors.New("does not contain a '.', it must be in the form \"dbname\".\"rpname\" where the quotes are optional.")
+		}
+		d.Database = value[:n]
+	}
+	if value[n] != '.' {
+		return errors.New("dbrp must specify retention policy, do you have a missing or extra '.'?")
+	}
+	value = value[n+1:]
+	if value[0] == '"' {
+		d.RetentionPolicy, _ = parseQuotedStr(value)
+	} else {
+		d.RetentionPolicy = value
+	}
+
+	return nil
+}
+
+func newDBRPFromString(value string) (*DBRP, error) {
+	dbrp := &DBRP{}
+	if err := dbrp.Unmarshal(value); err != nil {
+		return nil, err
+	}
+
+	return dbrp, nil
+}
+
 // Statistics about the execution of a task.
 type ExecutionStats struct {
 	// Summary stats about the entire task
@@ -2325,36 +2361,6 @@ func (d *DBRPs) String() string {
 	return fmt.Sprint(*d)
 }
 
-// Parse string of the form "db"."rp" where the quotes are optional but can include escaped quotes
-// within the strings.
-func (d *DBRPs) Set(value string) error {
-	dbrp := DBRP{}
-	if len(value) == 0 {
-		return errors.New("dbrp cannot be empty")
-	}
-	var n int
-	if value[0] == '"' {
-		dbrp.Database, n = parseQuotedStr(value)
-	} else {
-		n = strings.IndexRune(value, '.')
-		if n == -1 {
-			return errors.New("does not contain a '.', it must be in the form \"dbname\".\"rpname\" where the quotes are optional.")
-		}
-		dbrp.Database = value[:n]
-	}
-	if value[n] != '.' {
-		return errors.New("dbrp must specify retention policy, do you have a missing or extra '.'?")
-	}
-	value = value[n+1:]
-	if value[0] == '"' {
-		dbrp.RetentionPolicy, _ = parseQuotedStr(value)
-	} else {
-		dbrp.RetentionPolicy = value
-	}
-	*d = append(*d, dbrp)
-	return nil
-}
-
 // parseQuotedStr reads from txt starting with beginning quote until next unescaped quote returning the unescaped string and the number of bytes read.
 func parseQuotedStr(txt string) (string, int) {
 	quote := txt[0]
@@ -2393,9 +2399,11 @@ func (t TaskVars) CreateTaskOptions() (CreateTaskOptions, error) {
 	}
 
 	for _, dbrp := range t.DBRPs {
-		if err := ds.Set(dbrp); err != nil {
+		d, err := newDBRPFromString(dbrp)
+		if err != nil {
 			return o, err
 		}
+		ds = append(ds, *d)
 	}
 
 	o.DBRPs = ds
@@ -2412,9 +2420,11 @@ func (t TaskVars) UpdateTaskOptions() (UpdateTaskOptions, error) {
 	}
 
 	for _, dbrp := range t.DBRPs {
-		if err := ds.Set(dbrp); err != nil {
+		d, err := newDBRPFromString(dbrp)
+		if err != nil {
 			return o, err
 		}
+		ds = append(ds, *d)
 	}
 
 	o.DBRPs = ds
