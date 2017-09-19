@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -546,6 +547,10 @@ var (
 	ddbrp       = make(dbrps, 0)
 )
 
+func init() {
+	defineFlags.Var(&ddbrp, "dbrp", `A database and retention policy pair of the form "db"."rp" the quotes are optional. The flag can be specified multiple times.`)
+}
+
 type dbrps []client.DBRP
 
 func (d *dbrps) String() string {
@@ -555,16 +560,53 @@ func (d *dbrps) String() string {
 // Parse string of the form "db"."rp" where the quotes are optional but can include escaped quotes
 // within the strings.
 func (d *dbrps) Set(value string) error {
-	dbrp := &client.DBRP{}
-	if err := dbrp.Unmarshal(value); err != nil {
-		return err
+	dbrp := client.DBRP{}
+	if len(value) == 0 {
+		return errors.New("dbrp cannot be empty")
 	}
-	*d = append(*d, *dbrp)
+	var n int
+	if value[0] == '"' {
+		dbrp.Database, n = parseQuotedStr(value)
+	} else {
+		n = strings.IndexRune(value, '.')
+		if n == -1 {
+			return errors.New("does not contain a '.', it must be in the form \"dbname\".\"rpname\" where the quotes are optional.")
+		}
+		dbrp.Database = value[:n]
+	}
+	if value[n] != '.' {
+		return errors.New("dbrp must specify retention policy, do you have a missing or extra '.'?")
+	}
+	value = value[n+1:]
+	if value[0] == '"' {
+		dbrp.RetentionPolicy, _ = parseQuotedStr(value)
+	} else {
+		dbrp.RetentionPolicy = value
+	}
+	*d = append(*d, dbrp)
 	return nil
 }
 
-func init() {
-	defineFlags.Var(&ddbrp, "dbrp", `A database and retention policy pair of the form "db"."rp" the quotes are optional. The flag can be specified multiple times.`)
+// parseQuotedStr reads from txt starting with beginning quote until next unescaped quote returning the unescaped string and the number of bytes read.
+func parseQuotedStr(txt string) (string, int) {
+	quote := txt[0]
+	// Unescape quotes
+	var buf bytes.Buffer
+	buf.Grow(len(txt))
+	last := 1
+	i := 1
+	for ; i < len(txt)-1; i++ {
+		if txt[i] == '\\' && txt[i+1] == quote {
+			buf.Write([]byte(txt[last:i]))
+			buf.Write([]byte{quote})
+			i += 2
+			last = i
+		} else if txt[i] == quote {
+			break
+		}
+	}
+	buf.Write([]byte(txt[last:i]))
+	return buf.String(), i + 1
 }
 
 func defineUsage() {

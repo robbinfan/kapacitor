@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"path"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/influxdata/influxdb/influxql"
@@ -222,41 +221,41 @@ func (d DBRP) String() string {
 	return fmt.Sprintf("%q.%q", d.Database, d.RetentionPolicy)
 }
 
-func (d *DBRP) Unmarshal(value string) error {
-	if len(value) == 0 {
-		return errors.New("dbrp cannot be empty")
-	}
-	var n int
-	if value[0] == '"' {
-		d.Database, n = parseQuotedStr(value)
-	} else {
-		n = strings.IndexRune(value, '.')
-		if n == -1 {
-			return errors.New("does not contain a '.', it must be in the form \"dbname\".\"rpname\" where the quotes are optional.")
-		}
-		d.Database = value[:n]
-	}
-	if value[n] != '.' {
-		return errors.New("dbrp must specify retention policy, do you have a missing or extra '.'?")
-	}
-	value = value[n+1:]
-	if value[0] == '"' {
-		d.RetentionPolicy, _ = parseQuotedStr(value)
-	} else {
-		d.RetentionPolicy = value
-	}
+//func (d *DBRP) Unmarshal(value string) error {
+//	if len(value) == 0 {
+//		return errors.New("dbrp cannot be empty")
+//	}
+//	var n int
+//	if value[0] == '"' {
+//		d.Database, n = parseQuotedStr(value)
+//	} else {
+//		n = strings.IndexRune(value, '.')
+//		if n == -1 {
+//			return errors.New("does not contain a '.', it must be in the form \"dbname\".\"rpname\" where the quotes are optional.")
+//		}
+//		d.Database = value[:n]
+//	}
+//	if value[n] != '.' {
+//		return errors.New("dbrp must specify retention policy, do you have a missing or extra '.'?")
+//	}
+//	value = value[n+1:]
+//	if value[0] == '"' {
+//		d.RetentionPolicy, _ = parseQuotedStr(value)
+//	} else {
+//		d.RetentionPolicy = value
+//	}
+//
+//	return nil
+//}
 
-	return nil
-}
-
-func newDBRPFromString(value string) (*DBRP, error) {
-	dbrp := &DBRP{}
-	if err := dbrp.Unmarshal(value); err != nil {
-		return nil, err
-	}
-
-	return dbrp, nil
-}
+//func newDBRPFromString(value string) (*DBRP, error) {
+//	dbrp := &DBRP{}
+//	if err := dbrp.Unmarshal(value); err != nil {
+//		return nil, err
+//	}
+//
+//	return dbrp, nil
+//}
 
 // Statistics about the execution of a task.
 type ExecutionStats struct {
@@ -2361,73 +2360,30 @@ func (d *DBRPs) String() string {
 	return fmt.Sprint(*d)
 }
 
-// parseQuotedStr reads from txt starting with beginning quote until next unescaped quote returning the unescaped string and the number of bytes read.
-func parseQuotedStr(txt string) (string, int) {
-	quote := txt[0]
-	// Unescape quotes
-	var buf bytes.Buffer
-	buf.Grow(len(txt))
-	last := 1
-	i := 1
-	for ; i < len(txt)-1; i++ {
-		if txt[i] == '\\' && txt[i+1] == quote {
-			buf.Write([]byte(txt[last:i]))
-			buf.Write([]byte{quote})
-			i += 2
-			last = i
-		} else if txt[i] == quote {
-			break
-		}
-	}
-	buf.Write([]byte(txt[last:i]))
-	return buf.String(), i + 1
-}
-
 type TaskVars struct {
-	ID         string   `json:"id,omitempty" yaml:"id"`
-	TemplateID string   `json:"template-id,omitempty" yaml:"template-id"`
-	DBRPs      []string `json:"dbrps,omitempty" yaml:"dbrps"`
-	Vars       Vars     `json:"vars,omitempty" yaml:"vars"`
+	ID         string `json:"id,omitempty" yaml:"id"`
+	TemplateID string `json:"template-id,omitempty" yaml:"template-id"`
+	DBRPs      []DBRP `json:"dbrps,omitempty" yaml:"dbrps"`
+	Vars       Vars   `json:"vars,omitempty" yaml:"vars"`
 }
 
 func (t TaskVars) CreateTaskOptions() (CreateTaskOptions, error) {
-	ds := DBRPs{}
 	o := CreateTaskOptions{
 		ID:         t.ID,
 		TemplateID: t.TemplateID,
 		Vars:       t.Vars,
+		DBRPs:      t.DBRPs,
 	}
-
-	for _, dbrp := range t.DBRPs {
-		d, err := newDBRPFromString(dbrp)
-		if err != nil {
-			return o, err
-		}
-		ds = append(ds, *d)
-	}
-
-	o.DBRPs = ds
 
 	return o, nil
 }
 
 func (t TaskVars) UpdateTaskOptions() (UpdateTaskOptions, error) {
-	ds := DBRPs{}
 	o := UpdateTaskOptions{
 		ID:         t.ID,
 		TemplateID: t.TemplateID,
 		Vars:       t.Vars,
+		DBRPs:      t.DBRPs,
 	}
-
-	for _, dbrp := range t.DBRPs {
-		d, err := newDBRPFromString(dbrp)
-		if err != nil {
-			return o, err
-		}
-		ds = append(ds, *d)
-	}
-
-	o.DBRPs = ds
-
 	return o, nil
 }

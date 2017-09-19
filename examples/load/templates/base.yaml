@@ -1,6 +1,6 @@
 id: base
 dbrps:
- - "telegraf.autogen"
+ - { db: "telegraf", rp: "autogen"}
 template-id: base_template
 vars: {
   "measurement": {"type" : "string", "value" : "cpu" },
