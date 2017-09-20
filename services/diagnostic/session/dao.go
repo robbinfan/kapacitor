@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	pageSize              = 10
-	sessionExipryDuration = 60 * time.Second
+	pageSize = 10
+	// TODO: what to make this value
+	sessionExipryDuration = 20 * time.Second
 )
 
 type SessionsDAO interface {

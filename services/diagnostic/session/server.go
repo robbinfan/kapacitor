@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 
 	"github.com/influxdata/kapacitor/services/diagnostic/internal/log"
@@ -14,11 +13,8 @@ import (
 )
 
 const (
-	logsPath         = "/logs"
-	logsPathAnchored = "/logs/"
+	sessionsPath = "/sessions"
 )
-
-var validID = regexp.MustCompile(`^[-\._\p{L}0-9]+$`)
 
 //type Diagnostic interface {
 //}
@@ -50,12 +46,12 @@ func (s *Service) Open() error {
 	s.routes = []httpd.Route{
 		{
 			Method:      "POST",
-			Pattern:     logsPath,
+			Pattern:     sessionsPath,
 			HandlerFunc: s.handleCreateSession,
 		},
 		{
 			Method:      "GET",
-			Pattern:     logsPath,
+			Pattern:     sessionsPath,
 			HandlerFunc: s.handleSession,
 		},
 	}
@@ -84,7 +80,7 @@ func (s *Service) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := s.sessions.Create(tags)
-	u := fmt.Sprintf("%s?id=%s&page=%v", logsPath, session.ID(), session.Page())
+	u := fmt.Sprintf("%s,%s?id=%s&page=%v", httpd.BasePath, sessionsPath, session.ID(), session.Page())
 
 	header := w.Header()
 	header.Add("Link", fmt.Sprintf("<%s>; rel=\"next\";", u))
@@ -127,19 +123,21 @@ func (s *Service) handleSession(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: add byte buffer pool here
 	buf := bytes.NewBuffer(nil)
-	// TODO: add support for JSON encoding
+	// TODO: add support for JSON and logfmt encoding
 	for _, line := range p {
 		line.WriteTo(buf)
 	}
 
-	u := fmt.Sprintf("%s?id=%s&page=%v", logsPath, session.ID(), session.Page())
+	u := fmt.Sprintf("%s,%s?id=%s&page=%v", httpd.BasePath, sessionsPath, session.ID(), session.Page())
 
 	header := w.Header()
 	header.Add("Link", fmt.Sprintf("<%s>; rel=\"next\";", u))
 	header.Add("Deadline", session.Deadline().UTC().String())
+	fmt.Println(header)
 
 	w.WriteHeader(http.StatusOK)
-	w.Write(buf.Bytes())
+	//w.Write(buf.Bytes())
+	w.Write([]byte("yah"))
 
 	return
 }
