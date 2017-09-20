@@ -28,6 +28,7 @@ import (
 	"github.com/influxdata/kapacitor/services/consul"
 	"github.com/influxdata/kapacitor/services/deadman"
 	"github.com/influxdata/kapacitor/services/diagnostic"
+	"github.com/influxdata/kapacitor/services/diagnostic/session"
 	"github.com/influxdata/kapacitor/services/dns"
 	"github.com/influxdata/kapacitor/services/ec2"
 	"github.com/influxdata/kapacitor/services/file_discovery"
@@ -110,6 +111,7 @@ type Server struct {
 	AlertService          *alert.Service
 	TaskStore             *task_store.Service
 	ReplayService         *replay.Service
+	SessionService        *session.Service
 	InfluxDBService       *influxdb.Service
 	ConfigOverrideService *config.Service
 	TesterService         *servicetest.Service
@@ -238,6 +240,7 @@ func New(c *Config, buildInfo BuildInfo, diagService *diagnostic.Service) (*Serv
 	// Append these after InfluxDB because they depend on it
 	s.appendTaskStoreService()
 	s.appendReplayService()
+	s.appendSessionService()
 
 	// Append third-party integrations
 	// Append extra input services
@@ -417,6 +420,14 @@ func (s *Server) appendTaskStoreService() {
 	s.TaskStore = srv
 	s.TaskMaster.TaskStore = srv
 	s.AppendService("task_store", srv)
+}
+
+func (s *Server) appendSessionService() {
+	// TODO: add diagnostic
+	srv := session.NewService()
+	srv.HTTPDService = s.HTTPDService
+
+	s.AppendService("session", srv)
 }
 
 func (s *Server) appendReplayService() {
