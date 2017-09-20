@@ -18,6 +18,8 @@ const (
 type SessionsDAO interface {
 	Create(tags []log.StringField) *Session
 	Get(id string) (*Session, error)
+	Delete(id string) error
+	Prune() error
 }
 
 type sessionKV struct {
@@ -41,9 +43,53 @@ func (kv *sessionKV) Create(tags []log.StringField) *Session {
 	return s
 }
 
+func (kv *sessionKV) Delete(id string) error {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	s, err := kv.get(id)
+	if err != nil {
+		return err
+	}
+
+	if err := s.Close(); err != nil {
+		return err
+	}
+
+	delete(kv.sessions, s.id)
+
+	return nil
+}
+
+func (kv *sessionKV) Prune() error {
+	ids := []uuid.UUID{}
+	kv.mu.RLock()
+	now := time.Now()
+	for _, s := range kv.sessions {
+		if now.After(s.deadline) {
+			ids = append(ids, s.id)
+		}
+	}
+	kv.mu.RUnlock()
+
+	errs := []error{}
+	for _, id := range ids {
+		// TODO: maybe change function signature of delete
+		if err := kv.Delete(id.String()); err != nil {
+			// TODO log error
+			errs = append(errs, err)
+		}
+	}
+
+	return nil
+}
+
 func (kv *sessionKV) Get(id string) (*Session, error) {
 	kv.mu.RLock()
 	defer kv.mu.RUnlock()
+	return kv.get(id)
+}
+
+func (kv *sessionKV) get(id string) (*Session, error) {
 	sid, err := uuid.Parse(id)
 	if err != nil {
 		return nil, err
@@ -106,4 +152,9 @@ func (s *Session) GetPage(page int) ([]*Data, error) {
 	}
 
 	return l, nil
+}
+
+// TODO: implement closing logic here
+func (s *Session) Close() error {
+	return nil
 }

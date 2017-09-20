@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/influxdata/kapacitor/services/diagnostic/internal/log"
 	"github.com/influxdata/kapacitor/services/httpd"
@@ -27,6 +28,9 @@ type Service struct {
 	HTTPDService interface {
 		AddRoutes([]httpd.Route) error
 	}
+
+	ticker  *time.Ticker
+	closing chan struct{}
 }
 
 func NewService() *Service {
@@ -39,10 +43,15 @@ func NewService() *Service {
 
 // TODO: implement
 func (s *Service) Close() error {
+	s.closing <- struct{}{}
+	s.ticker.Stop()
 	return nil
 }
 
 func (s *Service) Open() error {
+	ch := make(chan struct{}, 0)
+	s.ticker = time.NewTicker(time.Second)
+
 	s.routes = []httpd.Route{
 		{
 			Method:      "POST",
@@ -55,6 +64,7 @@ func (s *Service) Open() error {
 			HandlerFunc: s.handleSession,
 		},
 	}
+	s.closing = ch
 
 	if s.HTTPDService == nil {
 		return errors.New("must set HTTPDService")
@@ -63,6 +73,19 @@ func (s *Service) Open() error {
 	if err := s.HTTPDService.AddRoutes(s.routes); err != nil {
 		return fmt.Errorf("failed to add routes: %v", err)
 	}
+
+	go func() {
+		for {
+			select {
+			case <-s.ticker.C:
+				if err := s.sessions.Prune(); err != nil {
+					// TODO: log error
+				}
+			case <-ch:
+				return
+			}
+		}
+	}()
 	return nil
 }
 
@@ -141,40 +164,3 @@ func (s *Service) handleSession(w http.ResponseWriter, r *http.Request) {
 
 	return
 }
-
-//type Sessions struct {
-//	mu       *sync.RWMutex
-//	sessions map[uuid.UUID]*session
-//}
-//
-//func (s *Sessions) newSession(tags []log.StringField) uuid.UUID {
-//	s.mu.Lock()
-//	defer s.mu.Unlock()
-//
-//	sn := &session{
-//		id:       uuid.New(),
-//		tags:     tags,
-//		queue:    &Queue{},
-//		deadline: time.Now().Add(10 * time.Second),
-//	}
-//
-//	s.sessions[sn.id] = sn
-//
-//	return sn.id
-//}
-//
-//type session struct {
-//	mu       sync.Mutex
-//	sessions *Sessions
-//	id       uuid.UUID
-//	page     int
-//	tags     []log.StringField
-//	queue    *Queue
-//	deadline time.Time
-//}
-//
-//func (s *session) Page() int {
-//	s.mu.Lock()
-//	defer s.mu.Unlock()
-//	return s.page
-//}
